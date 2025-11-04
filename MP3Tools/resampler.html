@@ -14,8 +14,7 @@
 <p id="status"></p>
 
 <script type="module">
-import FFmpeg from "https://esm.run/@ffmpeg/ffmpeg@0.12.6";
-const { createFFmpeg, fetchFile } = FFmpeg;
+import { createFFmpeg, fetchFile } from "https://cdn.skypack.dev/@ffmpeg/ffmpeg@0.12.6";
 
 const ffmpeg = createFFmpeg({ log: true });
 
