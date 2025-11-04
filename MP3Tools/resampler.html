@@ -4,6 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <title>MP3 Resampler</title>
+<!-- ✅ Use the official ffmpeg.wasm build that provides a global FFmpeg object -->
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 </head>
 <body>
 <h1>MP3 Resampler</h1>
@@ -13,45 +15,48 @@
 <button id="resampleBtn">Resample</button>
 <p id="status"></p>
 
-<script type="module">
-import { createFFmpeg, fetchFile } from "https://cdn.skypack.dev/@ffmpeg/ffmpeg@0.12.6";
+<script>
+async function init() {
+  const { createFFmpeg, fetchFile } = FFmpeg;
+  const ffmpeg = createFFmpeg({ log: true });
 
-const ffmpeg = createFFmpeg({ log: true });
+  document.getElementById('resampleBtn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('audioFile');
+    const rateInput = document.getElementById('sampleRate');
+    const status = document.getElementById('status');
 
-document.getElementById('resampleBtn').addEventListener('click', async () => {
-  const fileInput = document.getElementById('audioFile');
-  const rateInput = document.getElementById('sampleRate');
-  const status = document.getElementById('status');
+    if (!fileInput.files.length) {
+      alert('Please select an MP3 file.');
+      return;
+    }
 
-  if (!fileInput.files.length) {
-    alert('Please select an MP3 file.');
-    return;
-  }
+    const sampleRate = parseInt(rateInput.value);
+    if (!sampleRate || sampleRate <= 0) {
+      alert('Please enter a valid sample rate.');
+      return;
+    }
 
-  const sampleRate = parseInt(rateInput.value);
-  if (!sampleRate || sampleRate <= 0) {
-    alert('Please enter a valid sample rate.');
-    return;
-  }
+    const file = fileInput.files[0];
+    status.textContent = 'Loading FFmpeg (this may take a moment)...';
+    if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
-  const file = fileInput.files[0];
-  status.textContent = 'Loading FFmpeg (this may take a moment)...';
-  if (!ffmpeg.isLoaded()) await ffmpeg.load();
+    status.textContent = 'Resampling...';
+    ffmpeg.FS('writeFile', 'input.mp3', await fetchFile(file));
+    await ffmpeg.run('-i', 'input.mp3', '-ar', sampleRate.toString(), 'output.mp3');
 
-  status.textContent = 'Resampling...';
-  ffmpeg.FS('writeFile', 'input.mp3', await fetchFile(file));
-  await ffmpeg.run('-i', 'input.mp3', '-ar', sampleRate.toString(), 'output.mp3');
+    const data = ffmpeg.FS('readFile', 'output.mp3');
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: 'audio/mp3' }));
 
-  const data = ffmpeg.FS('readFile', 'output.mp3');
-  const url = URL.createObjectURL(new Blob([data.buffer], { type: 'audio/mp3' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `resampled_${sampleRate}Hz.mp3`;
+    link.click();
 
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `resampled_${sampleRate}Hz.mp3`;
-  link.click();
+    status.textContent = 'Done!';
+  });
+}
 
-  status.textContent = 'Done!';
-});
+init();
 </script>
 
 </body>
