@@ -4,59 +4,91 @@
 <head>
 <meta charset="UTF-8">
 <title>MP3 Resampler</title>
-<!-- ✅ Use the official ffmpeg.wasm build that provides a global FFmpeg object -->
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
 </head>
 <body>
 <h1>MP3 Resampler</h1>
-<input type="file" id="audioFile" accept=".mp3"><br><br>
+<input type="file" id="audioFile" accept="audio/mpeg"><br><br>
 <label>Target Sample Rate (Hz): </label>
 <input type="number" id="sampleRate" value="44100"><br><br>
 <button id="resampleBtn">Resample</button>
 <p id="status"></p>
 
 <script>
-async function init() {
-  const { createFFmpeg, fetchFile } = FFmpeg;
-  const ffmpeg = createFFmpeg({ log: true });
+document.getElementById('resampleBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('audioFile');
+  const sampleRate = parseInt(document.getElementById('sampleRate').value);
+  const status = document.getElementById('status');
 
-  document.getElementById('resampleBtn').addEventListener('click', async () => {
-    const fileInput = document.getElementById('audioFile');
-    const rateInput = document.getElementById('sampleRate');
-    const status = document.getElementById('status');
+  if (!fileInput.files.length) {
+    alert('Please select an MP3 file.');
+    return;
+  }
+  if (!sampleRate || sampleRate <= 0) {
+    alert('Please enter a valid sample rate.');
+    return;
+  }
 
-    if (!fileInput.files.length) {
-      alert('Please select an MP3 file.');
-      return;
-    }
+  const file = fileInput.files[0];
+  const arrayBuffer = await file.arrayBuffer();
 
-    const sampleRate = parseInt(rateInput.value);
-    if (!sampleRate || sampleRate <= 0) {
-      alert('Please enter a valid sample rate.');
-      return;
-    }
+  status.textContent = "Decoding audio...";
+  const tempCtx = new AudioContext();
+  const decodedData = await tempCtx.decodeAudioData(arrayBuffer);
+  tempCtx.close();
 
-    const file = fileInput.files[0];
-    status.textContent = 'Loading FFmpeg (this may take a moment)...';
-    if (!ffmpeg.isLoaded()) await ffmpeg.load();
+  status.textContent = "Resampling...";
+  const resampleCtx = new OfflineAudioContext(
+    decodedData.numberOfChannels,
+    decodedData.duration * sampleRate,
+    sampleRate
+  );
 
-    status.textContent = 'Resampling...';
-    ffmpeg.FS('writeFile', 'input.mp3', await fetchFile(file));
-    await ffmpeg.run('-i', 'input.mp3', '-ar', sampleRate.toString(), 'output.mp3');
+  const source = resampleCtx.createBufferSource();
+  source.buffer = decodedData;
+  source.connect(resampleCtx.destination);
+  source.start(0);
 
-    const data = ffmpeg.FS('readFile', 'output.mp3');
-    const url = URL.createObjectURL(new Blob([data.buffer], { type: 'audio/mp3' }));
+  const renderedBuffer = await resampleCtx.startRendering();
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `resampled_${sampleRate}Hz.mp3`;
-    link.click();
+  status.textContent = "Encoding MP3...";
+  const mp3Blob = encodeToMp3(renderedBuffer);
+  const url = URL.createObjectURL(mp3Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `resampled_${sampleRate}Hz.mp3`;
+  link.click();
 
-    status.textContent = 'Done!';
-  });
+  status.textContent = "Done!";
+});
+
+function encodeToMp3(audioBuffer) {
+  const samples = audioBuffer.getChannelData(0);
+  const sampleRate = audioBuffer.sampleRate;
+  const mp3Encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
+  const blockSize = 1152;
+  const mp3Data = [];
+
+  for (let i = 0; i < samples.length; i += blockSize) {
+    const sampleChunk = samples.subarray(i, i + blockSize);
+    const mp3buf = mp3Encoder.encodeBuffer(floatTo16BitPCM(sampleChunk));
+    if (mp3buf.length > 0) mp3Data.push(mp3buf);
+  }
+
+  const end = mp3Encoder.flush();
+  if (end.length > 0) mp3Data.push(end);
+
+  return new Blob(mp3Data, { type: 'audio/mpeg' });
 }
 
-init();
+function floatTo16BitPCM(float32Array) {
+  const buffer = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    buffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return buffer;
+}
 </script>
 
 </body>
